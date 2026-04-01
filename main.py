@@ -13,7 +13,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from fastapi import FastAPI, HTTPException, Request
@@ -256,6 +256,34 @@ async def health(request: Request) -> dict:
     bedrock_ok = getattr(st, "bedrock_healthy", False)
     faiss_ok = getattr(st, "faiss_index_loaded", False)
     overall = "healthy" if (bedrock_ok and faiss_ok) else "degraded"
+
+    re = getattr(st, "rule_engine", None)
+    rule_cache_age = (
+        round(time.monotonic() - re._cache_loaded_at, 1)
+        if re and getattr(re, "_cache_loaded_at", None)
+        else None
+    )
+
+    iw = getattr(st, "index_watcher", None)
+    ix = getattr(st, "index_swapper", None)
+
+    cal_ece: float | None = None
+    cal_status = "uncalibrated"
+    cs = getattr(st, "calibration_store", None)
+    if cs is not None:
+        try:
+            latest = await cs.get_latest_report()
+            if latest is not None:
+                cal_ece = latest.ece
+                age = datetime.now(timezone.utc) - latest.generated_at.replace(
+                    tzinfo=timezone.utc
+                ) if latest.generated_at.tzinfo is None else (
+                    datetime.now(timezone.utc) - latest.generated_at
+                )
+                cal_status = "stale" if age > timedelta(days=7) else "healthy"
+        except Exception:
+            pass
+
     return {
         "status": overall,
         "version": APP_VERSION,
@@ -265,6 +293,27 @@ async def health(request: Request) -> dict:
         },
         "faiss_index_loaded": faiss_ok,
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "audit_store": {
+            "connected": getattr(st, "audit_store", None) is not None,
+        },
+        "rule_engine": {
+            "connected": re is not None,
+            "cache_age_seconds": rule_cache_age,
+            "rule_count": len(re._cache) if re and hasattr(re, "_cache") and re._cache else 0,
+        },
+        "index_watcher": {
+            "running": (
+                iw._task is not None and not iw._task.done()
+                if iw and hasattr(iw, "_task") and iw._task
+                else False
+            ),
+            "last_poll_at": None,
+            "swap_count": ix._swap_count if ix and hasattr(ix, "_swap_count") else 0,
+        },
+        "calibration": {
+            "latest_ece": cal_ece,
+            "status": cal_status,
+        },
     }
 
 
