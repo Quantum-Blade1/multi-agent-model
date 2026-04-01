@@ -10,7 +10,7 @@ This ensures the LLM produces consistent, regulation-cited decisions with approp
 
 import logging
 
-from ai.schemas import AgentState
+from ai.core.schemas import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -200,8 +200,8 @@ async def _build_calibration_block() -> str:
     store/engine cannot be reached (best-effort, never raises).
     """
     try:
-        from ai.calibration.store import get_calibration_store
-        from ai.compliance_loop.rule_engine import get_rule_engine
+        from calibration.store import get_calibration_store
+        from rules.engine import get_rule_engine
 
         store = await get_calibration_store()
         report = await store.get_latest_report()

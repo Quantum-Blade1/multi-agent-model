@@ -22,22 +22,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from ai.audit.router import audit_router
-from ai.audit.store import AuditStore
-from ai.calibration.engine import CalibrationEngine
-from ai.calibration.router import calibration_router
-from ai.calibration.store import CalibrationStore
-from ai.compliance_loop.feedback_router import feedback_router
-from ai.compliance_loop.feedback_store import FeedbackStore
-from ai.compliance_loop.index_swapper import IndexSwapper
-from ai.compliance_loop.index_watcher import IndexWatcher
-from ai.compliance_loop.rule_engine import RuleEngine
-from ai.compliance_loop.rule_router import rule_router
-from ai.engine.decision_engine import DecisionEngine
-from ai.pipeline import CompliancePipeline, create_router
+from audit.router import audit_router
+from audit.store import AuditStore
+from calibration.engine import CalibrationEngine
+from calibration.router import calibration_router
+from calibration.store import CalibrationStore
+from feedback.router import feedback_router
+from feedback.store import FeedbackStore
+from index_management.swapper import IndexSwapper
+from index_management.watcher import IndexWatcher
+from rules.engine import RuleEngine
+from rules.router import rule_router
+from ai.core.decision_engine import DecisionEngine
+from ai.core.pipeline import CompliancePipeline, create_router
 from ai.rag.retriever import FAISSRetriever
-from ai.tools.function_registry import BedrockLLMClient, get_bedrock_client
-from rag_pipeline.config import settings
+from ai.llm.bedrock_client import BedrockLLMClient, get_bedrock_client
+from ingestion.config import settings
 
 APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
 ENV = os.getenv("ENV", "development")

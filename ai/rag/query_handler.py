@@ -7,12 +7,20 @@ running retrieval, and returning formatted regulatory chunks.
 
 import os
 
+from ingestion.config import settings
+
 from ai.rag.embedder import BGEEmbedder
 from ai.rag.indexer import FAISSIndexer
 from ai.rag.retriever import FAISSRetriever
 
-INDEX_MASTER_PATH = os.getenv("INDEX_MASTER_PATH", "data/indexes/master")
-INDEX_UPDATED_PATH = os.getenv("INDEX_UPDATED_PATH", "data/indexes/updated")
+INDEX_MASTER_PATH = os.getenv(
+    "INDEX_MASTER_PATH",
+    os.path.join(settings.INDEX_DIR, settings.MASTER_INDEX_NAME),
+)
+INDEX_UPDATED_PATH = os.getenv(
+    "INDEX_UPDATED_PATH",
+    os.path.join(settings.INDEX_DIR, settings.UPDATED_INDEX_NAME),
+)
 
 _INDEX_PATHS = {
     "master": INDEX_MASTER_PATH,

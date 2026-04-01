@@ -20,8 +20,8 @@ from ai.prompts.compliance_prompts import (
     SYSTEM_PROMPT,
     build_decision_prompt,
 )
-from ai.schemas import AgentState, ComplianceOutput, ComplianceStatus
-from ai.tools.function_registry import BedrockLLMClient, get_bedrock_client
+from ai.core.schemas import AgentState, ComplianceOutput, ComplianceStatus
+from ai.llm.bedrock_client import BedrockLLMClient, get_bedrock_client
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ async def _apply_confidence_adjustment(
     is kept and a warning is logged.
     """
     try:
-        from ai.calibration.live_adjuster import LiveConfidenceAdjuster
-        from ai.compliance_loop.rule_engine import get_rule_engine
+        from calibration.live_adjuster import LiveConfidenceAdjuster
+        from rules.engine import get_rule_engine
 
         rule_engine = await get_rule_engine()
         adjuster = LiveConfidenceAdjuster(rule_engine)

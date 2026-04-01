@@ -7,7 +7,7 @@ borrowers or counterparties.
 
 import logging
 
-from ai.schemas import AgentState
+from ai.core.schemas import AgentState
 
 logger = logging.getLogger(__name__)
 

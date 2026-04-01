@@ -7,7 +7,7 @@ the agent state with relevant compliance clauses.
 
 import logging
 
-from ai.schemas import AgentState
+from ai.core.schemas import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,21 @@ async def init_query_handler(retriever):
     """Initialize the global RAG retriever."""
     global _rag_retriever
     _rag_retriever = retriever
+
+
+def _retrieve_context(query: str) -> list[dict]:
+    """Use the injected retriever when available, otherwise build a QueryHandler."""
+    if _rag_retriever is not None:
+        if hasattr(_rag_retriever, "retrieve"):
+            return _rag_retriever.retrieve(query=query, top_k=5)
+        if hasattr(_rag_retriever, "handle"):
+            return _rag_retriever.handle(query=query)
+        raise TypeError("Injected RAG retriever must define retrieve() or handle()")
+
+    from ai.rag.query_handler import QueryHandler
+
+    handler = QueryHandler()
+    return handler.handle(query=query)
 
 
 def rag_agent(state: AgentState) -> AgentState:
@@ -37,10 +52,7 @@ def rag_agent(state: AgentState) -> AgentState:
         Updated AgentState with RAG retrieval results.
     """
     try:
-        from ai.rag.query_handler import QueryHandler
-
-        handler = QueryHandler()
-        results = handler.handle(query=state["query"])
+        results = _retrieve_context(query=state["query"])
 
         top_clauses = [
             {

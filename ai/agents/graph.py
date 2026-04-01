@@ -14,7 +14,7 @@ from ai.agents.rag_agent import rag_agent
 from ai.agents.sanctions_agent import sanctions_agent
 from ai.agents.temporal_agent import temporal_agent
 from ai.agents.transaction_agent import transaction_agent
-from ai.schemas import AgentState
+from ai.core.schemas import AgentState
 
 # ---------------------------------------------------------------------------
 # Build the compliance StateGraph

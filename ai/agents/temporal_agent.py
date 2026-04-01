@@ -8,7 +8,7 @@ documents in the compliance request.
 import logging
 from datetime import date, datetime
 
-from ai.schemas import AgentState
+from ai.core.schemas import AgentState
 
 logger = logging.getLogger(__name__)
 
