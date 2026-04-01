@@ -24,6 +24,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from ai.audit.router import audit_router
 from ai.audit.store import AuditStore
+from ai.calibration.engine import CalibrationEngine
+from ai.calibration.router import calibration_router
+from ai.calibration.store import CalibrationStore
 from ai.compliance_loop.feedback_router import feedback_router
 from ai.compliance_loop.feedback_store import FeedbackStore
 from ai.compliance_loop.index_swapper import IndexSwapper
@@ -136,6 +139,10 @@ async def lifespan(app: FastAPI):
     # -- Feedback store ------------------------------------------------------
     feedback_store = FeedbackStore()
 
+    # -- Calibration engine + store ------------------------------------------
+    calibration_store = CalibrationStore()
+    calibration_engine = CalibrationEngine(rule_engine)
+
     # -- Index watcher (background S3 poller) --------------------------------
     index_watcher = IndexWatcher(index_swapper)
     await index_watcher.start()
@@ -153,6 +160,8 @@ async def lifespan(app: FastAPI):
     app.state.index_watcher = index_watcher
     app.state.rule_engine = rule_engine
     app.state.feedback_store = feedback_store
+    app.state.calibration_store = calibration_store
+    app.state.calibration_engine = calibration_engine
 
     logging.info(
         "Application startup complete — faiss_index_loaded=%s bedrock_healthy=%s "
@@ -167,6 +176,7 @@ async def lifespan(app: FastAPI):
     logging.info("Application shutdown initiated")
     await index_watcher.stop()
     await index_swapper.close()
+    await calibration_store.close()
     await feedback_store.close()
     await rule_engine.close()
     await audit_store.close()
@@ -280,6 +290,7 @@ app.include_router(create_router(get_pipeline))
 app.include_router(audit_router)
 app.include_router(rule_router)
 app.include_router(feedback_router)
+app.include_router(calibration_router)
 
 
 if __name__ == "__main__":
