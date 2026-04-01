@@ -21,7 +21,7 @@ RETRY_DELAY_SECONDS = 1.0
 
 FALLBACK_REVIEW_DECISION = json.dumps(
     {
-        "status": "Review",
+        "status": "review",
         "reason": "LLM unavailable. Automatically flagged for manual compliance review.",
         "clauses": [],
         "confidence": 0.0,

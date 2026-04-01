@@ -1,0 +1,28 @@
+# Ignore everything not needed in the Docker build context
+.git
+.gitignore
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+htmlcov/
+.coverage
+.cursor/
+.vscode/
+.idea/
+
+# Documentation & plans (not needed at runtime)
+*.md
+*.plan.md
+docs/
+
+# Large data files (mount at runtime or bake into a separate image layer)
+rag_pipeline/data/raw/
+rag_pipeline/data/cleaned/
+
+# Docker-in-Docker
+Dockerfile
+docker-compose.yml

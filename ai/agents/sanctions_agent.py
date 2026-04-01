@@ -38,8 +38,9 @@ def sanctions_agent(state: AgentState) -> AgentState:
         Updated AgentState with sanctions screening results.
     """
     try:
-        pan = str(state.user_data.get("pan_number", "")).strip().upper()
-        name = str(state.user_data.get("name", "")).strip().upper()
+        user_data = state["user_data"]
+        pan = str(user_data.get("pan_number", "")).strip().upper()
+        name = str(user_data.get("name", "")).strip().upper()
 
         match_description: str | None = None
 

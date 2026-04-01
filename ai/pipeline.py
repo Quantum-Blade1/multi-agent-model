@@ -1,120 +1,117 @@
 """
 Pipeline module.
 
-Top-level orchestration that connects input validation, the LangGraph
-compliance pipeline, and output formatting.  Also exposes a FastAPI
-router for HTTP access.
+Compliance orchestration with an injected DecisionEngine and FastAPI routes
+for production NBFC compliance processing.
 """
 
-import hashlib
-import json
-import logging
-from datetime import datetime, timezone
+from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import hashlib
+import logging
+from collections.abc import Callable
+from typing import Annotated
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import ValidationError
 
 from ai.engine.decision_engine import DecisionEngine
-from ai.engine.output_formatter import OutputFormatter
-from ai.schemas import ComplianceInput
+from ai.schemas import ComplianceInput, ComplianceOutput, ComplianceStatus
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Core pipeline class
-# ---------------------------------------------------------------------------
+BATCH_MAX = 20
+
 
 class CompliancePipeline:
-    """End-to-end compliance processing: validate → decide → format."""
+    """End-to-end compliance processing with an injected ``DecisionEngine``."""
 
-    def __init__(self) -> None:
-        self.engine = DecisionEngine()
-        self.formatter = OutputFormatter()
+    def __init__(self, engine: DecisionEngine) -> None:
+        self.engine = engine
 
-    def process(self, input_data: dict) -> dict:
+    async def process(
+        self, compliance_in: ComplianceInput | dict
+    ) -> ComplianceOutput:
         """
-        Run a full compliance check.
+        Validate input (including manual Pydantic validation), log a trace hash,
+        and run the decision engine.
 
-        Args:
-            input_data: Raw dict matching the ComplianceInput schema.
-
-        Returns:
-            A JSON-serialisable dict with the compliance decision, metadata,
-            and any error information.
+        Accepts either a ``ComplianceInput`` instance or a raw dict (e.g. tests).
         """
-        # --- 1. Validate input -------------------------------------------------
         try:
-            compliance_input = ComplianceInput(**input_data)
-        except ValidationError as exc:
-            logger.warning("Pipeline: input validation failed — %s", exc)
-            return {
-                "status": "Error",
-                "reason": "Invalid input schema",
-                "errors": exc.errors(),
-            }
+            if isinstance(compliance_in, dict):
+                validated = ComplianceInput.model_validate(compliance_in)
+            else:
+                validated = ComplianceInput.model_validate(compliance_in.model_dump())
+        except ValidationError:
+            return ComplianceOutput(
+                request_id=str(uuid4()),
+                correlation_id=None,
+                status=ComplianceStatus.REVIEW,
+                reason="Input validation failed",
+                clauses=[],
+                confidence=0.0,
+                rules_used=[],
+                agent_errors=[],
+                short_circuit_reason=None,
+                processing_ms=None,
+            )
 
-        # --- 2. Run the decision engine ----------------------------------------
-        try:
-            decision = self.engine.run(compliance_input)
-        except Exception as exc:
-            logger.error("Pipeline: decision engine error — %s", exc)
-            return {
-                "status": "Review",
-                "reason": "Processing error",
-                "error": str(exc),
-            }
+        raw = f"{validated.request_id}:{validated.query}"
+        input_hash = hashlib.sha256(raw.encode()).hexdigest()[:12]
+        logger.info("CompliancePipeline.process input_hash=%s", input_hash)
 
-        # --- 3. Format the output ----------------------------------------------
-        try:
-            return self.formatter.format(decision)
-        except Exception as exc:
-            logger.error("Pipeline: output formatting error — %s", exc)
-            return {
-                "status": "Review",
-                "reason": "Processing error",
-                "error": str(exc),
-            }
+        return await self.engine.process(validated)
 
-
-# ---------------------------------------------------------------------------
-# FastAPI router
-# ---------------------------------------------------------------------------
-
-router = APIRouter(prefix="/ai", tags=["compliance"])
-_pipeline = CompliancePipeline()
+    async def process_batch(self, inputs: list[ComplianceInput]) -> list[ComplianceOutput]:
+        """Delegate to the engine with a maximum batch size."""
+        if len(inputs) > BATCH_MAX:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Batch size exceeds maximum of {BATCH_MAX}",
+            )
+        return await self.engine.process_batch(inputs)
 
 
-@router.post("/process")
-async def process_compliance(input_body: ComplianceInput) -> dict:
-    """
-    Accept a compliance check request and return the decision.
+def create_router(get_pipeline: Callable[..., CompliancePipeline]) -> APIRouter:
+    """Build the ``/ai`` router with dependency-injected ``CompliancePipeline``."""
 
-    **POST /ai/process**
+    router = APIRouter(prefix="/ai", tags=["compliance"])
 
-    - Body: ``ComplianceInput`` JSON
-    - Returns: compliance decision dict with status, reason, clauses,
-      confidence, rules_used, request_id, and timestamp.
-    """
-    input_hash = hashlib.sha256(
-        json.dumps(input_body.model_dump(), sort_keys=True, default=str).encode()
-    ).hexdigest()[:12]
-
-    logger.info(
-        "POST /ai/process — input_hash=%s  timestamp=%s",
-        input_hash,
-        datetime.now(timezone.utc).isoformat(),
+    @router.post(
+        "/process",
+        response_model=ComplianceOutput,
+        response_model_exclude_none=True,
+        summary="Run compliance check",
+        description=(
+            "Accept a single compliance request body and return a structured "
+            "compliance decision (status, reason, clauses, confidence, etc.)."
+        ),
     )
+    async def process_compliance(
+        body: ComplianceInput,
+        pipeline: Annotated[CompliancePipeline, Depends(get_pipeline)],
+    ) -> ComplianceOutput:
+        return await pipeline.process(body)
 
-    try:
-        result = _pipeline.process(input_body.model_dump())
-    except Exception as exc:
-        logger.error("POST /ai/process — unhandled error: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    logger.info(
-        "POST /ai/process — input_hash=%s  status=%s",
-        input_hash,
-        result.get("status", "unknown"),
+    @router.post(
+        "/process/batch",
+        response_model=list[ComplianceOutput],
+        response_model_exclude_none=True,
+        summary="Batch compliance checks",
+        description=(
+            "Run up to 20 compliance checks in one request. "
+            "Response includes an ``X-Batch-Size`` header."
+        ),
     )
+    async def process_compliance_batch(
+        body: list[ComplianceInput],
+        response: Response,
+        pipeline: Annotated[CompliancePipeline, Depends(get_pipeline)],
+    ) -> list[ComplianceOutput]:
+        out = await pipeline.process_batch(body)
+        response.headers["X-Batch-Size"] = str(len(body))
+        return out
 
-    return result
+    return router

@@ -45,7 +45,7 @@ def temporal_agent(state: AgentState) -> AgentState:
     expired_docs: list[dict[str, str]] = []
 
     try:
-        documents_meta = state.user_data.get("documents_meta", [])
+        documents_meta = state["user_data"].get("documents_meta", [])
 
         if not isinstance(documents_meta, list):
             logger.warning(

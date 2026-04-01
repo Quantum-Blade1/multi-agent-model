@@ -18,6 +18,19 @@ class InsufficientRegulationError(Exception):
 class FAISSRetriever:
     """Retrieves the most relevant compliance chunks from a FAISS index."""
 
+    @classmethod
+    def load(cls, path: str) -> "FAISSRetriever":
+        """
+        Load a persisted index from disk and return a retriever.
+
+        Args:
+            path: Base path (no extension) matching ``FAISSIndexer.save`` / ``load``.
+        """
+        indexer = FAISSIndexer()
+        indexer.load(path)
+        embedder = BGEEmbedder()
+        return cls(indexer=indexer, embedder=embedder)
+
     def __init__(self, indexer: FAISSIndexer, embedder: BGEEmbedder) -> None:
         """
         Initialise the retriever.

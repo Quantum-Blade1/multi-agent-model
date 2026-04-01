@@ -25,8 +25,8 @@ def rag_agent(state: AgentState) -> AgentState:
     """
     Query the RAG pipeline and attach retrieved regulatory context to state.
 
-    Populates ``state.rag_context`` with the concatenated clause texts and
-    ``state.agent_outputs["rag_agent"]`` with:
+    Populates ``state["rag_context"]`` with the concatenated clause texts and
+    ``state["agent_outputs"]["rag_agent"]`` with:
         - ``clauses_found`` (int)  — number of chunks retrieved
         - ``top_clauses``   (list) — list of ``{clause_id, text, score}`` dicts
 
@@ -40,7 +40,7 @@ def rag_agent(state: AgentState) -> AgentState:
         from ai.rag.query_handler import QueryHandler
 
         handler = QueryHandler()
-        results = handler.handle(query=state.query)
+        results = handler.handle(query=state["query"])
 
         top_clauses = [
             {
@@ -55,9 +55,9 @@ def rag_agent(state: AgentState) -> AgentState:
         context_parts = [
             f"[{r['clause_id']}] {r['text']}" for r in top_clauses if r["text"]
         ]
-        state.rag_context = "\n\n".join(context_parts)
+        state["rag_context"] = "\n\n".join(context_parts)
 
-        state.agent_outputs["rag_agent"] = {
+        state["agent_outputs"]["rag_agent"] = {
             "clauses_found": len(top_clauses),
             "top_clauses": top_clauses,
         }
@@ -66,8 +66,8 @@ def rag_agent(state: AgentState) -> AgentState:
 
     except Exception as exc:
         logger.warning("rag_agent: retrieval failed — %s", exc)
-        state.rag_context = ""
-        state.agent_outputs["rag_agent"] = {
+        state["rag_context"] = ""
+        state["agent_outputs"]["rag_agent"] = {
             "clauses_found": 0,
             "top_clauses": [],
         }

@@ -1,0 +1,26 @@
+# =============================================================================
+# docker-compose.yml — local development only (not for production)
+# =============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - ENVIRONMENT=development
+      - ENV=development
+    volumes:
+      - ./rag_pipeline/data/indexes:/app/rag_pipeline/data/indexes:ro
+      - ./rag_pipeline/data/raw:/app/rag_pipeline/data/raw:ro
+      - ./rag_pipeline/data/cleaned:/app/rag_pipeline/data/cleaned:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -116,9 +116,12 @@ class AgentState(TypedDict):
     doc_check_passed: bool
     missing_docs: list[str]
     
-    # rag_agent outputs
-    rag_context: list[RagChunk]
-    
+    # rag_agent outputs (concatenated clause text for LLM prompts)
+    rag_context: str
+
+    # Per-agent structured outputs for the decision agent
+    agent_outputs: dict[str, Any]
+
     # transaction_agent outputs
     foir_value: float
     foir_passed: bool

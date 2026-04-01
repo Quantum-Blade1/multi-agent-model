@@ -92,12 +92,16 @@ FORMAT_REMINDER = (
 FORMAT_INSTRUCTION = FORMAT_REMINDER
 RAG_CONTEXT_PROMPT = RAG_CONTEXT_TEMPLATE
 
+def _escape_braces(s: str) -> str:
+    """Escape literal braces so they survive str.format()."""
+    return s.replace("{", "{{").replace("}", "}}")
+
 DECISION_AGENT_PROMPT = (
-    SYSTEM_PROMPT
-    + "\n\n---FEW SHOT EXAMPLES---\n" + FEW_SHOT_EXAMPLES
+    _escape_braces(SYSTEM_PROMPT)
+    + "\n\n---FEW SHOT EXAMPLES---\n" + _escape_braces(FEW_SHOT_EXAMPLES)
     + "\n\n---REGULATORY CONTEXT---\n{regulatory_context}"
     + "\n\n---COMPLIANCE SIGNALS---\n{agent_outputs}"
-    + "\n\n" + FORMAT_REMINDER
+    + "\n\n" + _escape_braces(FORMAT_REMINDER)
 )
 
 # ---------------------------------------------------------------------------

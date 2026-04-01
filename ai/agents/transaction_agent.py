@@ -37,14 +37,15 @@ def transaction_agent(state: AgentState) -> AgentState:
         Updated AgentState with FOIR evaluation results.
     """
     try:
-        income = float(state.user_data.get("income", 0))
-        existing_emi = float(state.user_data.get("existing_emi", 0))
-        loan_amount = float(state.user_data.get("loan_amount", 0))
-        tenure_months = int(state.user_data.get("tenure_months", 60))
+        user_data = state["user_data"]
+        income = float(user_data.get("income", 0))
+        existing_emi = float(user_data.get("existing_emi", 0))
+        loan_amount = float(user_data.get("loan_amount", 0))
+        tenure_months = int(user_data.get("tenure_months", 60))
 
         if income <= 0:
             logger.warning("transaction_agent: income is zero or negative.")
-            state.agent_outputs["transaction_agent"] = {
+            state["agent_outputs"]["transaction_agent"] = {
                 "foir_pass": False,
                 "foir_value": 1.0,
             }

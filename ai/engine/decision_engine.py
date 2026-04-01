@@ -35,7 +35,7 @@ class DecisionEngine:
 
     async def _ensure_dependencies(self):
         if self._bedrock_client is None:
-            self._bedrock_client = await get_bedrock_client()
+            self._bedrock_client = get_bedrock_client()
         set_bedrock_client(self._bedrock_client)
 
         if self._rag_retriever is not None:
@@ -58,7 +58,8 @@ class DecisionEngine:
             graph_start_time=time.monotonic(),
             doc_check_passed=False,
             missing_docs=[],
-            rag_context=[],
+            rag_context="",
+            agent_outputs={},
             foir_value=-1.0,
             foir_passed=False,
             emi_breakdown={},
