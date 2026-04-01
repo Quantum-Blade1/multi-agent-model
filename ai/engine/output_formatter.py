@@ -1,11 +1,11 @@
 """
 Output Formatter module.
 
-Converts a ComplianceOutput into a clean, JSON-serialisable dictionary
-with added metadata (timestamp, request ID) and field validation.
+Responsible for final ComplianceOutput validation and API response serialization.
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -13,51 +13,46 @@ from ai.schemas import ComplianceOutput, ComplianceStatus
 
 logger = logging.getLogger(__name__)
 
-_VALID_STATUSES = {s.value for s in ComplianceStatus}
-
 
 class OutputFormatter:
-    """Formats and validates a ComplianceOutput for API / report consumption."""
+    """Formats and validates compliance outputs for API consumption."""
 
-    def format(self, output: ComplianceOutput) -> dict:
-        """
-        Convert a ComplianceOutput to a JSON-serialisable dict with metadata.
+    def format(self, output: ComplianceOutput, start_time: float) -> ComplianceOutput:
+        """Normalize and clamp output, and enforce safety rules."""
+        if not isinstance(output, ComplianceOutput):
+            raise TypeError("output must be ComplianceOutput")
 
-        Adds:
-            - ``request_id``  — a unique UUID4 string
-            - ``timestamp``   — ISO-8601 UTC timestamp
+        elapsed_ms = (time.monotonic() - start_time) * 1000.0
+        output.processing_ms = round(elapsed_ms, 2)
 
-        Validates:
-            - ``status`` must be Approved / Rejected / Review; forced to
-              ``"Review"`` if invalid.
-            - Missing fields are filled with safe defaults.
+        try:
+            output.status = ComplianceStatus(output.status.value if isinstance(output.status, ComplianceStatus) else str(output.status))
+        except Exception:
+            logger.warning("OutputFormatter: invalid status '%s', coercing to REVIEW", output.status)
+            output.status = ComplianceStatus.REVIEW
 
-        Args:
-            output: A ComplianceOutput instance.
+        if not output.request_id:
+            output.request_id = str(uuid4())
 
-        Returns:
-            A plain dict ready for ``json.dumps()`` or API response.
-        """
-        # --- Validate / coerce status ------------------------------------------
-        status_value = getattr(output.status, "value", str(output.status))
-        if status_value not in _VALID_STATUSES:
-            logger.warning(
-                "OutputFormatter: invalid status '%s' — forcing 'Review'.",
-                status_value,
-            )
-            status_value = ComplianceStatus.REVIEW.value
+        if output.timestamp is None:
+            output.timestamp = datetime.now(timezone.utc)
 
-        # --- Build the response dict -------------------------------------------
-        result: dict = {
-            "request_id": str(uuid4()),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "status": status_value,
-            "reason": output.reason if output.reason else "No reason provided.",
-            "clauses": output.clauses if output.clauses else [],
-            "confidence": (
-                output.confidence if output.confidence is not None else 0.0
-            ),
-            "rules_used": output.rules_used if output.rules_used else [],
-        }
+        if output.confidence is None:
+            output.confidence = 0.0
+        output.confidence = max(0.0, min(1.0, float(output.confidence)))
 
-        return result
+        nonrecoverable = any(not (err.recoverable if hasattr(err, "recoverable") else True) for err in (output.agent_errors or []))
+        if nonrecoverable and output.status == ComplianceStatus.APPROVED:
+            output.status = ComplianceStatus.REVIEW
+            output.reason = (output.reason or "") + " (Overridden to REVIEW due to agent failures.)"
+
+        return output
+
+    def to_api_response(self, output: ComplianceOutput) -> dict:
+        """Serialize ComplianceOutput to API response dictionary."""
+        if not isinstance(output, ComplianceOutput):
+            raise TypeError("output must be ComplianceOutput")
+
+        payload = output.model_dump(mode="json")  # Ensures JSON-serialisable
+        payload["api_version"] = "1.0"
+        return payload

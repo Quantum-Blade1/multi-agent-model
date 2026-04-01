@@ -43,7 +43,8 @@ class FAISSIndexer:
         embeddings = embeddings.astype(np.float32)
         dim = embeddings.shape[1]
 
-        self.index = faiss.IndexFlatL2(dim)
+        # Use IndexFlatIP for inner product similarity (works as cosine with normalized vectors).
+        self.index = faiss.IndexFlatIP(dim)
         self.index.add(embeddings)
         self.metadata = metadata
 

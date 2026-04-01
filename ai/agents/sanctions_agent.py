@@ -61,7 +61,7 @@ def sanctions_agent(state: AgentState) -> AgentState:
 
         sanctioned = match_description is not None
 
-        state.agent_outputs["sanctions_agent"] = {
+        state["agent_outputs"]["sanctions_agent"] = {
             "sanctioned": sanctioned,
             "match": match_description,
         }
@@ -70,7 +70,7 @@ def sanctions_agent(state: AgentState) -> AgentState:
 
     except Exception as exc:
         logger.warning("sanctions_agent: screening failed — %s", exc)
-        state.agent_outputs["sanctions_agent"] = {
+        state["agent_outputs"]["sanctions_agent"] = {
             "sanctioned": False,
             "match": None,
         }

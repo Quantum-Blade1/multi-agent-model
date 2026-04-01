@@ -56,7 +56,7 @@ def transaction_agent(state: AgentState) -> AgentState:
         foir = (existing_emi + new_emi) / income
         foir_pass = foir < FOIR_THRESHOLD
 
-        state.agent_outputs["transaction_agent"] = {
+        state["agent_outputs"]["transaction_agent"] = {
             "foir_pass": foir_pass,
             "foir_value": round(foir, 4),
         }
@@ -67,7 +67,7 @@ def transaction_agent(state: AgentState) -> AgentState:
 
     except Exception as exc:
         logger.warning("transaction_agent: evaluation failed — %s", exc)
-        state.agent_outputs["transaction_agent"] = {
+        state["agent_outputs"]["transaction_agent"] = {
             "foir_pass": False,
             "foir_value": 0.0,
         }

@@ -90,7 +90,7 @@ def temporal_agent(state: AgentState) -> AgentState:
 
     all_valid = len(expired_docs) == 0
 
-    state.agent_outputs["temporal_agent"] = {
+    state["agent_outputs"]["temporal_agent"] = {
         "expired_docs": expired_docs,
         "all_valid": all_valid,
     }

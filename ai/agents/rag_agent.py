@@ -11,6 +11,15 @@ from ai.schemas import AgentState
 
 logger = logging.getLogger(__name__)
 
+# Global retriever for dependency injection
+_rag_retriever = None
+
+
+async def init_query_handler(retriever):
+    """Initialize the global RAG retriever."""
+    global _rag_retriever
+    _rag_retriever = retriever
+
 
 def rag_agent(state: AgentState) -> AgentState:
     """

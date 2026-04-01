@@ -1,66 +1,159 @@
 """
 Decision Engine module.
 
-Core engine that accepts a ComplianceInput, runs the full LangGraph
-agent pipeline, and returns the final ComplianceOutput.
+Core coordination for compliance request processing.
 """
 
+import asyncio
 import logging
+import time
+from typing import List, Optional
+from uuid import uuid4
 
-from ai.agents.graph import compliance_graph
-from ai.schemas import AgentState, ComplianceInput, ComplianceOutput, ComplianceStatus
+from ai.agents.graph import run_graph
+from ai.agents.decision_agent import set_bedrock_client
+from ai.agents.rag_agent import init_query_handler
+from ai.engine.output_formatter import OutputFormatter
+from ai.schemas import (
+    AgentState,
+    ComplianceInput,
+    ComplianceOutput,
+    ComplianceStatus,
+)
+from ai.tools.function_registry import get_bedrock_client
 
 logger = logging.getLogger(__name__)
 
 
 class DecisionEngine:
-    """Orchestrates a compliance check by driving the compiled LangGraph."""
+    """Orchestrates compliance processing through the LangGraph agent pipeline."""
 
-    def run(self, input: ComplianceInput) -> ComplianceOutput:
-        """
-        Execute the full compliance pipeline.
+    def __init__(self, bedrock_client=None, rag_retriever=None):
+        self._bedrock_client = bedrock_client
+        self._rag_retriever = rag_retriever
+        self._formatter = OutputFormatter()
 
-        Args:
-            input: A validated ComplianceInput payload.
+    async def _ensure_dependencies(self):
+        if self._bedrock_client is None:
+            self._bedrock_client = await get_bedrock_client()
+        set_bedrock_client(self._bedrock_client)
 
-        Returns:
-            The final ComplianceOutput produced by the decision agent.
-        """
+        if self._rag_retriever is not None:
+            await init_query_handler(self._rag_retriever)
+
+    async def process(self, input: ComplianceInput) -> ComplianceOutput:
+        """Process one compliance input and return formatted output."""
+        await self._ensure_dependencies()
+
+        start_time = time.monotonic()
+
         initial_state = AgentState(
+            request_id=input.request_id,
+            correlation_id=input.correlation_id,
             user_data=input.user_data,
             documents=input.documents,
             query=input.query,
+            agent_errors=[],
+            short_circuit_reason=None,
+            graph_start_time=time.monotonic(),
+            doc_check_passed=False,
+            missing_docs=[],
+            rag_context=[],
+            foir_value=-1.0,
+            foir_passed=False,
+            emi_breakdown={},
+            sanctions_hit=False,
+            matched_entity=None,
+            sanctions_score=0.0,
+            expired_docs=[],
+            temporal_passed=False,
+            days_to_expiry={},
+            compliance_output=None,
         )
 
-        logger.info("DecisionEngine: starting compliance graph for query=%r", input.query)
+        logger.info(
+            "DecisionEngine.process start request_id=%s correlation_id=%s",
+            input.request_id,
+            input.correlation_id,
+        )
 
         try:
-            final_state = compliance_graph.invoke(initial_state.model_dump())
+            final_state = await run_graph(initial_state)
         except Exception as exc:
-            logger.error("DecisionEngine: graph execution failed — %s", exc)
-            return ComplianceOutput(
+            logger.error("DecisionEngine.process graph failure request_id=%s %s", input.request_id, exc)
+            final_output = ComplianceOutput(
+                request_id=input.request_id or str(uuid4()),
+                correlation_id=input.correlation_id,
                 status=ComplianceStatus.REVIEW,
                 reason=f"Pipeline execution failed: {exc}",
                 clauses=[],
                 confidence=0.0,
                 rules_used=[],
+                agent_errors=initial_state.get("agent_errors", []),
+                short_circuit_reason=initial_state.get("short_circuit_reason"),
+                processing_ms=None,
+            )
+            return self._formatter.format(final_output, start_time)
+
+        output = final_state.get("compliance_output") if isinstance(final_state, dict) else final_state.compliance_output
+
+        if output is None:
+            output = ComplianceOutput(
+                request_id=input.request_id or str(uuid4()),
+                correlation_id=input.correlation_id,
+                status=ComplianceStatus.REVIEW,
+                reason="Pipeline completed without generated compliance output.",
+                clauses=[],
+                confidence=0.0,
+                rules_used=[],
+                agent_errors=(final_state.get("agent_errors") if isinstance(final_state, dict) else final_state.agent_errors) or [],
+                short_circuit_reason=(final_state.get("short_circuit_reason") if isinstance(final_state, dict) else final_state.short_circuit_reason),
+                processing_ms=None,
             )
 
-        # LangGraph returns a dict; reconstruct AgentState to access typed fields
-        result_state = AgentState(**final_state)
+        formatted_output = self._formatter.format(output, start_time)
 
-        if result_state.final_decision is not None:
-            logger.info(
-                "DecisionEngine: completed — status=%s",
-                result_state.final_decision.status.value,
-            )
-            return result_state.final_decision
-
-        logger.warning("DecisionEngine: graph finished without a final_decision.")
-        return ComplianceOutput(
-            status=ComplianceStatus.REVIEW,
-            reason="Pipeline completed but no decision was produced.",
-            clauses=[],
-            confidence=0.0,
-            rules_used=[],
+        logger.info(
+            "DecisionEngine.process complete request_id=%s status=%s confidence=%.4f",
+            formatted_output.request_id,
+            formatted_output.status.value,
+            formatted_output.confidence,
         )
+
+        return formatted_output
+
+    async def process_batch(self, inputs: List[ComplianceInput]) -> List[ComplianceOutput]:
+        """Process a batch of inputs with resilient per-item error handling."""
+        results = await asyncio.gather(
+            *[self.process(item) for item in inputs],
+            return_exceptions=True,
+        )
+
+        outputs: List[ComplianceOutput] = []
+        for idx, item_result in enumerate(results):
+            if isinstance(item_result, Exception):
+                logger.error("DecisionEngine.process_batch item failed idx=%d error=%s", idx, item_result)
+                outputs.append(
+                    ComplianceOutput(
+                        request_id=str(uuid4()),
+                        correlation_id=None,
+                        status=ComplianceStatus.REVIEW,
+                        reason=f"Batch processing failure: {item_result}",
+                        clauses=[],
+                        confidence=0.0,
+                        rules_used=[],
+                        agent_errors=[],
+                        short_circuit_reason=None,
+                        processing_ms=None,
+                    )
+                )
+            else:
+                outputs.append(item_result)
+
+        logger.info(
+            "DecisionEngine.process_batch complete batch=%d success=%d",
+            len(inputs),
+            sum(1 for o in outputs if o is not None),
+        )
+
+        return outputs

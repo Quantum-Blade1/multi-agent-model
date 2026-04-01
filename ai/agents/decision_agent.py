@@ -8,6 +8,7 @@ response into a structured ComplianceOutput.
 
 import json
 import logging
+from typing import Optional
 
 from ai.prompts.compliance_prompts import (
     DECISION_AGENT_PROMPT,
@@ -19,6 +20,15 @@ from ai.schemas import AgentState, ComplianceOutput, ComplianceStatus
 from ai.tools.function_registry import BedrockLLMClient, get_bedrock_client
 
 logger = logging.getLogger(__name__)
+
+# Global client instance for dependency injection
+_bedrock_client: Optional[BedrockLLMClient] = None
+
+
+def set_bedrock_client(client: BedrockLLMClient) -> None:
+    """Set the global Bedrock client for the decision agent."""
+    global _bedrock_client
+    _bedrock_client = client
 
 
 def decision_agent(state: AgentState) -> AgentState:
@@ -42,7 +52,7 @@ def decision_agent(state: AgentState) -> AgentState:
         Updated AgentState with ``final_decision`` populated.
     """
     try:
-        client: BedrockLLMClient = get_bedrock_client()
+        client = _bedrock_client if _bedrock_client is not None else get_bedrock_client()
 
         # --- Build the user prompt ------------------------------------------------
         agent_outputs_str = json.dumps(state.agent_outputs, indent=2, default=str)

@@ -42,3 +42,21 @@ graph.add_edge("decision_agent", END)
 
 # --- Compile ---------------------------------------------------------------
 compliance_graph = graph.compile()
+
+
+# ---------------------------------------------------------------------------
+# Graph execution function
+# ---------------------------------------------------------------------------
+async def run_graph(initial_state: AgentState) -> AgentState:
+    """
+    Execute the compliance graph with the given initial state.
+    
+    Args:
+        initial_state: The initial AgentState to process.
+        
+    Returns:
+        The final AgentState after graph execution.
+    """
+    # LangGraph's invoke returns the final state
+    final_state = await compliance_graph.ainvoke(initial_state)
+    return final_state
