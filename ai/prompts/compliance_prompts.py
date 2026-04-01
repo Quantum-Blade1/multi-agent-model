@@ -8,7 +8,11 @@ summarize agent signals in a readable format, and end with strict format reminde
 This ensures the LLM produces consistent, regulation-cited decisions with appropriate confidence adjustments.
 """
 
+import logging
+
 from ai.schemas import AgentState
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # System Prompt
@@ -80,6 +84,24 @@ AGENT_SUMMARY_TEMPLATE = (
 )
 
 # ---------------------------------------------------------------------------
+# Calibration Context Templates
+# ---------------------------------------------------------------------------
+CALIBRATION_CONTEXT_TEMPLATE = (
+    "---CALIBRATION CONTEXT---\n"
+    "System historical accuracy: {accuracy:.1%}\n"
+    "Reviewer agreement rate: {accuracy:.1%} (based on {feedback_count} reviewed decisions)\n"
+    "Current confidence penalty per agent error: {penalty:.2f}\n"
+    "Your raw confidence will be automatically adjusted downward by this system "
+    "before it reaches the final output. Report your TRUE belief as a probability.\n"
+    "Do not pre-adjust for errors — the system does this."
+)
+
+CALIBRATION_UNAVAILABLE = (
+    "---CALIBRATION CONTEXT---\n"
+    "No historical calibration data available yet. Use your best judgment."
+)
+
+# ---------------------------------------------------------------------------
 # Format Reminder
 # ---------------------------------------------------------------------------
 FORMAT_REMINDER = (
@@ -104,20 +126,21 @@ DECISION_AGENT_PROMPT = (
     + "\n\n" + _escape_braces(FORMAT_REMINDER)
 )
 
+
 # ---------------------------------------------------------------------------
-# Prompt Builder Function
+# Prompt Builder Function (async — fetches live calibration data)
 # ---------------------------------------------------------------------------
-def build_decision_prompt(state: AgentState) -> str:
+async def build_decision_prompt(state: AgentState) -> str:
+    """Assemble the final prompt for the decision agent.
+
+    Asynchronously fetches the latest calibration report and the current
+    confidence penalty from the rule engine, injecting a calibration
+    context block between the agent summary and the format reminder.
+
+    If calibration data is unavailable the prompt still works — it just
+    includes a "no data" notice so the LLM uses its best judgment.
     """
-    Assembles the final prompt for the decision agent by combining all template sections.
-    
-    Args:
-        state: The current AgentState containing all agent outputs and context.
-        
-    Returns:
-        The complete prompt string ready for Bedrock.
-    """
-    # Format RAG context
+    # --- RAG context ---
     rag_chunks = state.get("rag_context", [])
     if not rag_chunks:
         rag_context_formatted = (
@@ -125,18 +148,20 @@ def build_decision_prompt(state: AgentState) -> str:
             "base training knowledge only. Reduce confidence accordingly."
         )
     else:
-        rag_context_formatted = "\n\n".join(
-            f"[SOURCE: {chunk['source']} | RELEVANCE: {chunk['score']:.2f}]\n{chunk['text']}"
-            for chunk in rag_chunks
-        )
-    
-    # Fill RAG template
+        if isinstance(rag_chunks, str):
+            rag_context_formatted = rag_chunks
+        else:
+            rag_context_formatted = "\n\n".join(
+                f"[SOURCE: {chunk['source']} | RELEVANCE: {chunk['score']:.2f}]\n{chunk['text']}"
+                for chunk in rag_chunks
+            )
+
     rag_section = RAG_CONTEXT_TEMPLATE.format(
         rag_context_formatted=rag_context_formatted,
-        query=state.get("query", "")
+        query=state.get("query", ""),
     )
-    
-    # Fill agent summary
+
+    # --- Agent signals ---
     agent_section = AGENT_SUMMARY_TEMPLATE.format(
         doc_check_passed=state.get("doc_check_passed", False),
         missing_docs=state.get("missing_docs", []),
@@ -150,16 +175,55 @@ def build_decision_prompt(state: AgentState) -> str:
         temporal_passed=state.get("temporal_passed", False),
         days_to_expiry=state.get("days_to_expiry", {}),
         agent_errors=state.get("agent_errors", []),
-        short_circuit_reason=state.get("short_circuit_reason", None)
+        short_circuit_reason=state.get("short_circuit_reason", None),
     )
-    
-    # Assemble full prompt
+
+    # --- Calibration context (best-effort) ---
+    calibration_block = await _build_calibration_block()
+
+    # --- Assemble ---
     prompt = (
         SYSTEM_PROMPT
         + "\n\n---FEW SHOT EXAMPLES---\n" + FEW_SHOT_EXAMPLES
         + "\n\n---REGULATORY CONTEXT---\n" + rag_section
         + "\n\n---COMPLIANCE SIGNALS---\n" + agent_section
+        + "\n\n" + calibration_block
         + "\n\n" + FORMAT_REMINDER
     )
-    
     return prompt
+
+
+async def _build_calibration_block() -> str:
+    """Fetch calibration report + penalty and format the context block.
+
+    Returns ``CALIBRATION_UNAVAILABLE`` when no data exists or if the
+    store/engine cannot be reached (best-effort, never raises).
+    """
+    try:
+        from ai.calibration.store import get_calibration_store
+        from ai.compliance_loop.rule_engine import get_rule_engine
+
+        store = await get_calibration_store()
+        report = await store.get_latest_report()
+
+        rule_engine = await get_rule_engine()
+        penalty = await rule_engine.confidence_penalty_per_error()
+
+        if report is None:
+            return CALIBRATION_UNAVAILABLE
+
+        accuracy_by_status = getattr(report, "accuracy_by_status", {})
+        avg_accuracy = (
+            sum(accuracy_by_status.values()) / len(accuracy_by_status)
+            if accuracy_by_status
+            else 0.0
+        )
+
+        return CALIBRATION_CONTEXT_TEMPLATE.format(
+            accuracy=avg_accuracy,
+            feedback_count=report.feedback_count,
+            penalty=penalty,
+        )
+    except Exception as exc:
+        logger.debug("Calibration context unavailable: %s", exc)
+        return CALIBRATION_UNAVAILABLE

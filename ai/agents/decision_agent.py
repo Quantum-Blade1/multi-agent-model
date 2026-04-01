@@ -4,6 +4,11 @@ Decision Agent module.
 Aggregates outputs from all upstream compliance agents, invokes the LLM
 via Bedrock to synthesise a final compliance decision, and parses the
 response into a structured ComplianceOutput.
+
+The agent is async so it can call the :class:`LiveConfidenceAdjuster`
+(which reads the penalty from :class:`RuleEngine` via DynamoDB) and the
+async ``build_decision_prompt`` (which fetches the latest calibration
+report).  LangGraph handles async nodes natively via ``ainvoke``.
 """
 
 import json
@@ -11,16 +16,15 @@ import logging
 from typing import Optional
 
 from ai.prompts.compliance_prompts import (
-    DECISION_AGENT_PROMPT,
     FORMAT_INSTRUCTION,
     SYSTEM_PROMPT,
+    build_decision_prompt,
 )
 from ai.schemas import AgentState, ComplianceOutput, ComplianceStatus
 from ai.tools.function_registry import BedrockLLMClient, get_bedrock_client
 
 logger = logging.getLogger(__name__)
 
-# Global client instance for dependency injection
 _bedrock_client: Optional[BedrockLLMClient] = None
 
 
@@ -41,25 +45,18 @@ def _normalize_status(raw: str) -> ComplianceStatus:
     return mapping.get(key, ComplianceStatus.REVIEW)
 
 
-def decision_agent(state: AgentState) -> AgentState:
-    """
-    Synthesise a final compliance decision from all upstream agent outputs.
+async def decision_agent(state: AgentState) -> AgentState:
+    """Synthesise a final compliance decision from all upstream agent outputs.
 
     Workflow:
-        1. Collect ``state["agent_outputs"]`` and ``state["rag_context"]``.
-        2. Build a prompt using ``DECISION_AGENT_PROMPT`` + ``FORMAT_INSTRUCTION``.
-        3. Call ``BedrockLLMClient.invoke_with_fallback()`` (with fallback on failure).
-        4. Parse the JSON response into a ``ComplianceOutput``.
+        1. Build an async prompt with calibration context injected.
+        2. Call ``BedrockLLMClient.invoke_with_fallback()``.
+        3. Parse the JSON response into a ``ComplianceOutput``.
+        4. Apply :class:`LiveConfidenceAdjuster` to the raw confidence.
         5. Set ``state["compliance_output"]``.
 
     On JSON parse failure the decision defaults to
     ``status=REVIEW``, ``reason="Decision parsing failed"``.
-
-    Args:
-        state: Current agent graph state.
-
-    Returns:
-        Updated AgentState with ``compliance_output`` populated.
     """
     request_id = state["request_id"]
     correlation_id = state["correlation_id"]
@@ -67,22 +64,7 @@ def decision_agent(state: AgentState) -> AgentState:
     try:
         client = _bedrock_client if _bedrock_client is not None else get_bedrock_client()
 
-        agent_outputs_str = json.dumps(state["agent_outputs"], indent=2, default=str)
-
-        user_prompt_parts = [
-            DECISION_AGENT_PROMPT.format(
-                agent_outputs=agent_outputs_str,
-                regulatory_context=state["rag_context"] or "(none)",
-            ),
-        ]
-
-        if state["rag_context"]:
-            user_prompt_parts.append(
-                f"Regulatory reference context:\n{state['rag_context']}"
-            )
-
-        user_prompt_parts.append(FORMAT_INSTRUCTION)
-        user_prompt = "\n\n".join(user_prompt_parts)
+        user_prompt = await build_decision_prompt(state)
 
         system_prompt = SYSTEM_PROMPT
         raw_response = client.invoke_with_fallback(
@@ -90,9 +72,12 @@ def decision_agent(state: AgentState) -> AgentState:
             user_prompt=user_prompt,
         )
 
-        state["compliance_output"] = _parse_response(
+        output = _parse_response(
             raw_response, request_id=request_id, correlation_id=correlation_id
         )
+
+        output = await _apply_confidence_adjustment(output, state)
+        state["compliance_output"] = output
 
     except Exception as exc:
         logger.warning("decision_agent: unexpected error — %s", exc)
@@ -111,11 +96,53 @@ def decision_agent(state: AgentState) -> AgentState:
     return state
 
 
+async def _apply_confidence_adjustment(
+    output: ComplianceOutput, state: AgentState
+) -> ComplianceOutput:
+    """Apply the live calibration adjuster to the parsed output.
+
+    Best-effort: if the rule engine is unavailable the raw confidence
+    is kept and a warning is logged.
+    """
+    try:
+        from ai.calibration.live_adjuster import LiveConfidenceAdjuster
+        from ai.compliance_loop.rule_engine import get_rule_engine
+
+        rule_engine = await get_rule_engine()
+        adjuster = LiveConfidenceAdjuster(rule_engine)
+
+        adjusted = await adjuster.adjust(
+            raw_confidence=output.confidence,
+            agent_errors=output.agent_errors,
+            rag_context_empty=len(state.get("rag_context") or "") == 0,
+            sanctions_hit=state.get("sanctions_hit", False),
+            short_circuit_reason=state.get("short_circuit_reason"),
+        )
+
+        output.confidence = adjusted.adjusted
+        output.confidence_adjustment = adjusted.model_dump()
+
+        logger.debug(
+            "decision_agent: confidence adjusted — raw=%.4f adjusted=%.4f "
+            "total_deduction=%.4f deductions=%d request_id=%s",
+            adjusted.raw,
+            adjusted.adjusted,
+            adjusted.total_deduction,
+            len(adjusted.deductions),
+            output.request_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "decision_agent: confidence adjustment skipped — %s", exc
+        )
+
+    return output
+
+
 def _parse_response(
     raw: str, *, request_id: str, correlation_id: str | None
 ) -> ComplianceOutput:
-    """
-    Attempt to parse a raw LLM response string into a ComplianceOutput.
+    """Attempt to parse a raw LLM response string into a ComplianceOutput.
 
     Falls back to a Review decision if parsing fails.
     """

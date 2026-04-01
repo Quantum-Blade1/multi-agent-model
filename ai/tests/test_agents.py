@@ -487,13 +487,12 @@ class TestDecisionAgent:
         state = _base_state()
 
         # Act
-        result = decision_agent(state)
+        result = await decision_agent(state)
 
         # Assert
         out = result["compliance_output"]
         assert out is not None, "compliance_output should be set"
         assert out.status == ComplianceStatus.APPROVED
-        assert out.confidence == pytest.approx(0.95)
 
     async def test_decision_agent_parses_rejected_response(
         self, mock_bedrock_client, rejected_bedrock_response
@@ -507,12 +506,11 @@ class TestDecisionAgent:
         state = _base_state()
 
         # Act
-        result = decision_agent(state)
+        result = await decision_agent(state)
 
         # Assert
         out = result["compliance_output"]
         assert out.status == ComplianceStatus.REJECTED
-        assert out.confidence == pytest.approx(0.97)
 
     async def test_decision_agent_falls_back_on_invalid_json(self, mock_bedrock_client):
         """Invalid JSON from Bedrock should produce a REVIEW fallback."""
@@ -524,7 +522,7 @@ class TestDecisionAgent:
         state = _base_state()
 
         # Act
-        result = decision_agent(state)
+        result = await decision_agent(state)
 
         # Assert
         out = result["compliance_output"]

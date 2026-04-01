@@ -92,6 +92,7 @@ class ComplianceOutput(BaseModel):
     agent_errors: list[AgentError] = Field(description="List of errors encountered by agents during processing.")
     short_circuit_reason: ShortCircuitReason | None = Field(default=None, description="Reason for short-circuiting the process, if applicable.")
     processing_ms: float | None = Field(default=None, description="Total processing time in milliseconds, if available.")
+    confidence_adjustment: Any | None = Field(default=None, description="Breakdown of confidence adjustments applied by calibration system.")
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC), description="The UTC timestamp when the output was generated.")
 
     @model_validator(mode="after")
