@@ -24,6 +24,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from ai.audit.router import audit_router
 from ai.audit.store import AuditStore
+from ai.compliance_loop.index_swapper import IndexSwapper
+from ai.compliance_loop.index_watcher import IndexWatcher
+from ai.compliance_loop.rule_engine import RuleEngine
+from ai.compliance_loop.rule_router import rule_router
 from ai.engine.decision_engine import DecisionEngine
 from ai.pipeline import CompliancePipeline, create_router
 from ai.rag.retriever import FAISSRetriever
@@ -96,16 +100,21 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.info("Application startup initiated")
+
+    # -- FAISS via IndexSwapper (supports hot-swap at runtime) ---------------
+    index_swapper = IndexSwapper()
     faiss_retriever: FAISSRetriever | None = None
     faiss_loaded = False
     try:
         path = os.path.abspath(INDEX_MASTER_PATH)
-        faiss_retriever = FAISSRetriever.load(path)
+        index_swapper.load_initial("master", path)
+        faiss_retriever = index_swapper.get_retriever("master")
         faiss_loaded = True
         logger.info("FAISS index loaded from %s", path)
     except Exception as exc:
         logger.warning("FAISS index load failed (degraded mode): %s", exc)
 
+    # -- Bedrock client ------------------------------------------------------
     bedrock_client = get_bedrock_client()
     bedrock_ok, bedrock_ms = check_bedrock_health(bedrock_client)
     if not bedrock_ok:
@@ -113,11 +122,20 @@ async def lifespan(app: FastAPI):
             "Bedrock health check failed (degraded mode): latency_ms=%.2f", bedrock_ms
         )
 
+    # -- Decision engine + audit + pipeline ----------------------------------
     engine = DecisionEngine(bedrock_client=bedrock_client, rag_retriever=faiss_retriever)
 
     audit_store = AuditStore()
     pipeline = CompliancePipeline(engine, audit_store=audit_store)
 
+    # -- Rule engine ---------------------------------------------------------
+    rule_engine = RuleEngine()
+
+    # -- Index watcher (background S3 poller) --------------------------------
+    index_watcher = IndexWatcher(index_swapper)
+    await index_watcher.start()
+
+    # -- Store everything on app.state ---------------------------------------
     app.state.bedrock_client = bedrock_client
     app.state.faiss_retriever = faiss_retriever
     app.state.engine = engine
@@ -126,6 +144,9 @@ async def lifespan(app: FastAPI):
     app.state.bedrock_healthy = bedrock_ok
     app.state.bedrock_latency_ms = bedrock_ms
     app.state.faiss_index_loaded = faiss_loaded
+    app.state.index_swapper = index_swapper
+    app.state.index_watcher = index_watcher
+    app.state.rule_engine = rule_engine
 
     logging.info(
         "Application startup complete — faiss_index_loaded=%s bedrock_healthy=%s "
@@ -138,6 +159,9 @@ async def lifespan(app: FastAPI):
     yield
 
     logging.info("Application shutdown initiated")
+    await index_watcher.stop()
+    await index_swapper.close()
+    await rule_engine.close()
     await audit_store.close()
 
 
@@ -247,6 +271,7 @@ async def ready(request: Request) -> JSONResponse:
 
 app.include_router(create_router(get_pipeline))
 app.include_router(audit_router)
+app.include_router(rule_router)
 
 
 if __name__ == "__main__":
