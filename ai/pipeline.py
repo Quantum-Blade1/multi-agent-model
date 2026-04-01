@@ -2,11 +2,14 @@
 Pipeline module.
 
 Compliance orchestration with an injected DecisionEngine and FastAPI routes
-for production NBFC compliance processing.
+for production NBFC compliance processing.  When an :class:`AuditStore` is
+provided, every compliance decision is automatically written to the
+tamper-evident audit trail.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from collections.abc import Callable
@@ -25,10 +28,63 @@ BATCH_MAX = 20
 
 
 class CompliancePipeline:
-    """End-to-end compliance processing with an injected ``DecisionEngine``."""
+    """End-to-end compliance processing with an injected ``DecisionEngine``.
 
-    def __init__(self, engine: DecisionEngine) -> None:
+    When *audit_store* is provided, each successful compliance decision is
+    persisted to DynamoDB as a hash-chained audit record.  Audit failures
+    are logged at CRITICAL level but **never** block the compliance response.
+    """
+
+    def __init__(
+        self,
+        engine: DecisionEngine,
+        audit_store: "AuditStore | None" = None,
+    ) -> None:
         self.engine = engine
+        self.audit_store = audit_store
+
+    async def _write_audit(
+        self,
+        compliance_input: ComplianceInput,
+        compliance_output: ComplianceOutput,
+        agent_state: dict,
+    ) -> None:
+        """Best-effort audit write — failures are logged, never raised."""
+        if self.audit_store is None:
+            return
+
+        from ai.audit.models import build_audit_record
+        from ai.audit.store import AuditWriteError
+
+        try:
+            previous_hash = await self.audit_store.get_latest_chain_hash()
+            audit_record = await build_audit_record(
+                compliance_input=compliance_input,
+                compliance_output=compliance_output,
+                agent_state=agent_state,
+                previous_chain_hash=previous_hash,
+            )
+            await self.audit_store.save_record(audit_record)
+            logger.info(
+                "Audit record saved audit_id=%s request_id=%s chain_hash=%s...",
+                audit_record.audit_id,
+                compliance_output.request_id,
+                audit_record.chain_hash[:16],
+            )
+        except AuditWriteError as exc:
+            logger.critical(
+                "Audit write failed — compliance response still returned: %s "
+                "request_id=%s",
+                exc,
+                compliance_output.request_id,
+            )
+        except Exception as exc:
+            logger.critical(
+                "Unexpected audit error — compliance response still returned: %s "
+                "request_id=%s",
+                exc,
+                compliance_output.request_id,
+            )
 
     async def process(
         self, compliance_in: ComplianceInput | dict
@@ -62,7 +118,11 @@ class CompliancePipeline:
         input_hash = hashlib.sha256(raw.encode()).hexdigest()[:12]
         logger.info("CompliancePipeline.process input_hash=%s", input_hash)
 
-        return await self.engine.process(validated)
+        output, final_state = await self.engine.process(validated)
+
+        await self._write_audit(validated, output, final_state)
+
+        return output
 
     async def process_batch(self, inputs: list[ComplianceInput]) -> list[ComplianceOutput]:
         """Delegate to the engine with a maximum batch size."""
@@ -71,7 +131,21 @@ class CompliancePipeline:
                 status_code=413,
                 detail=f"Batch size exceeds maximum of {BATCH_MAX}",
             )
-        return await self.engine.process_batch(inputs)
+        results = await self.engine.process_batch(inputs)
+
+        outputs: list[ComplianceOutput] = []
+        audit_coros = []
+        for idx, (co, state) in enumerate(results):
+            outputs.append(co)
+            if self.audit_store is not None:
+                audit_coros.append(
+                    self._write_audit(inputs[idx], co, state)
+                )
+
+        if audit_coros:
+            await asyncio.gather(*audit_coros, return_exceptions=True)
+
+        return outputs
 
 
 def create_router(get_pipeline: Callable[..., CompliancePipeline]) -> APIRouter:

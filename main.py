@@ -22,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from ai.audit.router import audit_router
+from ai.audit.store import AuditStore
 from ai.engine.decision_engine import DecisionEngine
 from ai.pipeline import CompliancePipeline, create_router
 from ai.rag.retriever import FAISSRetriever
@@ -112,12 +114,15 @@ async def lifespan(app: FastAPI):
         )
 
     engine = DecisionEngine(bedrock_client=bedrock_client, rag_retriever=faiss_retriever)
-    pipeline = CompliancePipeline(engine)
+
+    audit_store = AuditStore()
+    pipeline = CompliancePipeline(engine, audit_store=audit_store)
 
     app.state.bedrock_client = bedrock_client
     app.state.faiss_retriever = faiss_retriever
     app.state.engine = engine
     app.state.pipeline = pipeline
+    app.state.audit_store = audit_store
     app.state.bedrock_healthy = bedrock_ok
     app.state.bedrock_latency_ms = bedrock_ms
     app.state.faiss_index_loaded = faiss_loaded
@@ -133,6 +138,7 @@ async def lifespan(app: FastAPI):
     yield
 
     logging.info("Application shutdown initiated")
+    await audit_store.close()
 
 
 docs_url = None if ENV == "production" else "/docs"
@@ -240,6 +246,7 @@ async def ready(request: Request) -> JSONResponse:
 
 
 app.include_router(create_router(get_pipeline))
+app.include_router(audit_router)
 
 
 if __name__ == "__main__":

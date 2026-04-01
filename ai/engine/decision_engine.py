@@ -41,8 +41,15 @@ class DecisionEngine:
         if self._rag_retriever is not None:
             await init_query_handler(self._rag_retriever)
 
-    async def process(self, input: ComplianceInput) -> ComplianceOutput:
-        """Process one compliance input and return formatted output."""
+    async def process(
+        self, input: ComplianceInput
+    ) -> tuple[ComplianceOutput, AgentState]:
+        """Process one compliance input and return formatted output plus final state.
+
+        Returns:
+            A ``(ComplianceOutput, AgentState)`` tuple.  The state is
+            needed by the audit trail to capture per-agent signals.
+        """
         await self._ensure_dependencies()
 
         start_time = time.monotonic()
@@ -94,7 +101,7 @@ class DecisionEngine:
                 short_circuit_reason=initial_state.get("short_circuit_reason"),
                 processing_ms=None,
             )
-            return self._formatter.format(final_output, start_time)
+            return self._formatter.format(final_output, start_time), initial_state
 
         output = final_state.get("compliance_output") if isinstance(final_state, dict) else final_state.compliance_output
 
@@ -121,33 +128,62 @@ class DecisionEngine:
             formatted_output.confidence,
         )
 
-        return formatted_output
+        return formatted_output, final_state
 
-    async def process_batch(self, inputs: List[ComplianceInput]) -> List[ComplianceOutput]:
-        """Process a batch of inputs with resilient per-item error handling."""
+    async def process_batch(
+        self, inputs: List[ComplianceInput]
+    ) -> List[tuple[ComplianceOutput, AgentState]]:
+        """Process a batch of inputs with resilient per-item error handling.
+
+        Returns:
+            List of ``(ComplianceOutput, AgentState)`` tuples, one per input.
+        """
         results = await asyncio.gather(
             *[self.process(item) for item in inputs],
             return_exceptions=True,
         )
 
-        outputs: List[ComplianceOutput] = []
+        outputs: List[tuple[ComplianceOutput, AgentState]] = []
         for idx, item_result in enumerate(results):
             if isinstance(item_result, Exception):
                 logger.error("DecisionEngine.process_batch item failed idx=%d error=%s", idx, item_result)
-                outputs.append(
-                    ComplianceOutput(
-                        request_id=str(uuid4()),
-                        correlation_id=None,
-                        status=ComplianceStatus.REVIEW,
-                        reason=f"Batch processing failure: {item_result}",
-                        clauses=[],
-                        confidence=0.0,
-                        rules_used=[],
-                        agent_errors=[],
-                        short_circuit_reason=None,
-                        processing_ms=None,
-                    )
+                fallback_output = ComplianceOutput(
+                    request_id=str(uuid4()),
+                    correlation_id=None,
+                    status=ComplianceStatus.REVIEW,
+                    reason=f"Batch processing failure: {item_result}",
+                    clauses=[],
+                    confidence=0.0,
+                    rules_used=[],
+                    agent_errors=[],
+                    short_circuit_reason=None,
+                    processing_ms=None,
                 )
+                fallback_state: AgentState = {
+                    "request_id": fallback_output.request_id,
+                    "correlation_id": None,
+                    "user_data": {},
+                    "documents": [],
+                    "query": "",
+                    "agent_errors": [],
+                    "short_circuit_reason": None,
+                    "graph_start_time": 0.0,
+                    "doc_check_passed": False,
+                    "missing_docs": [],
+                    "rag_context": "",
+                    "agent_outputs": {},
+                    "foir_value": -1.0,
+                    "foir_passed": False,
+                    "emi_breakdown": {},
+                    "sanctions_hit": False,
+                    "matched_entity": None,
+                    "sanctions_score": 0.0,
+                    "expired_docs": [],
+                    "temporal_passed": False,
+                    "days_to_expiry": {},
+                    "compliance_output": None,
+                }
+                outputs.append((fallback_output, fallback_state))
             else:
                 outputs.append(item_result)
 

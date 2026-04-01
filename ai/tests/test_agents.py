@@ -607,7 +607,7 @@ class TestDecisionEngine:
                 documents=_base_state()["documents"],
                 query="Check compliance",
             )
-            result = await engine.process(input_data)
+            result, _state = await engine.process(input_data)
 
         assert result.request_id == "test-123"
         assert result.status == ComplianceStatus.APPROVED
@@ -630,7 +630,7 @@ class TestDecisionEngine:
                 documents=_base_state()["documents"],
                 query="Check compliance",
             )
-            result = await engine.process(input_data)
+            result, _state = await engine.process(input_data)
 
         assert result.status == ComplianceStatus.REVIEW
         assert "Pipeline execution failed" in result.reason
@@ -658,7 +658,7 @@ class TestDecisionEngine:
                 documents=_base_state()["documents"],
                 query="Check compliance",
             )
-            result = await engine.process(input_data)
+            result, _state = await engine.process(input_data)
 
         assert result.status == ComplianceStatus.REVIEW
         assert "Pipeline completed without generated compliance output" in result.reason
@@ -699,7 +699,7 @@ class TestDecisionEngine:
             results = await engine.process_batch(inputs)
 
         assert len(results) == 3
-        assert all(r.status == ComplianceStatus.APPROVED for r in results)
+        assert all(co.status == ComplianceStatus.APPROVED for co, _st in results)
 
 
 # ===========================================================================
