@@ -11,7 +11,7 @@ flowchart LR
     UserReq["User Request"] --> documentAgent["document_agent"]
     documentAgent --> ragAgent["rag_agent"]
     ragAgent --> transactionAgent["transaction_agent"]
-    transactionAgent --> semanticAgent["semantic_agent"]
+    transactionAgent --> sanctionAgent["semantic_agent"]
     sanctionAgent --> temporalAgent["temporal_agent"]
     temporalAgent --> decisionAgent["decision_agent"]
     
