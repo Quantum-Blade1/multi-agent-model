@@ -119,7 +119,10 @@ flowchart LR
 
 ## Compliance And Audit Architecture
 
-The audit path records every decision before response completion. SHA-256 is used for deterministic content hashing. RSA-2048-PSS is used for asymmetric signatures because PSS is the current safe padding mode for long-lived signatures. AES-256 is used for record encryption at rest because the access pattern is symmetric and service-bound.
+The audit path records every decision before response completion. 
+SHA-256 is used for deterministic content hashing 
+RSA-2048-PSS is used for asymmetric signatures because PSS is the current safe padding mode for long-lived signatures. 
+AES-256 is used for record encryption at rest because the access pattern is symmetric and service-bound.
 
 ```mermaid
 flowchart LR
