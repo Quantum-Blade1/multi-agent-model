@@ -1,3 +1,21 @@
+from fastapi import Body
+# In-memory store for customer activity (demo only)
+customer_activity_store = []
+# --- Customer Activity Endpoints ---
+@app.post("/customer-activity")
+async def add_customer_activity(data: dict = Body(...)):
+    # Add timestamp server-side if not present
+    if "timestamp" not in data:
+        data["timestamp"] = datetime.now(timezone.utc).isoformat()
+    customer_activity_store.insert(0, data)
+    # Limit to last 100 records for demo
+    if len(customer_activity_store) > 100:
+        customer_activity_store.pop()
+    return {"status": "success"}
+
+@app.get("/customer-activity")
+async def get_customer_activity():
+    return customer_activity_store
 """
 NBFC Compliance AI — FastAPI application entrypoint for AWS ECS.
 
@@ -333,6 +351,17 @@ async def ready(request: Request) -> JSONResponse:
         status_code=503,
         content={"ready": False, "reason": "; ".join(parts)},
     )
+
+
+@app.get("/user/role")
+async def get_user_role(request: Request) -> dict:
+    # Simple role determination based on API key
+    api_key = request.headers.get("X-API-Key", "")
+    if api_key and api_key.startswith("auditor"):
+        role = "auditor"
+    else:
+        role = "user"
+    return {"role": role}
 
 
 app.include_router(create_router(get_pipeline))

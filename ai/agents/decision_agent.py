@@ -122,6 +122,20 @@ async def _apply_confidence_adjustment(
         output.confidence = adjusted.adjusted
         output.confidence_adjustment = adjusted.model_dump()
 
+        # Handle edge cases
+        if output.confidence < 0.5:
+            output.status = ComplianceStatus.REJECTED
+            output.reason = (output.reason or "") + " (Confidence below threshold.)"
+        elif state.get("sanctions_hit", False):
+            output.status = ComplianceStatus.REJECTED
+            output.reason = (output.reason or "") + " (Sanctions hit detected.)"
+        elif len(state.get("rag_context") or "") == 0:
+            output.status = ComplianceStatus.REVIEW
+            output.reason = (output.reason or "") + " (RAG context is empty.)"
+        elif len(output.agent_errors or []) > 3:
+            output.status = ComplianceStatus.REVIEW
+            output.reason = (output.reason or "") + " (Too many agent errors.)"
+
         logger.debug(
             "decision_agent: confidence adjusted — raw=%.4f adjusted=%.4f "
             "total_deduction=%.4f deductions=%d request_id=%s",
