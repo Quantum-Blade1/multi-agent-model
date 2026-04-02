@@ -101,13 +101,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 | `temporal_agent` | Check expiry and time validity | Document metadata and expiry dates | Expired document signals | `decision_agent` graph fan-out |
 | `transaction_agent` | Apply FOIR and repayment checks | Income, EMI, tenure, amount | FOIR pass/fail signals | `decision_agent` graph fan-out |
 
-•	Step 1 — Input: ComplianceInput JSON arrives at POST /ai/process containing user_data (dict), documents (list of S3 URLs), query (string)
-•	Step 2 — Validation: OpenCV downloads and validates document images from S3 — checks presence, readability, and basic format integrity
-•	Step 3 — RAG Retrieval: BGE embeds the query, FAISS searches updated_index for top-5 regulation chunks, returns [{clause_id, text, source, score}]
-•	Step 4 — Agent Pipeline (LangGraph): all 5 agents execute against shared AgentState — document_agent, rag_agent, transaction_agent, sanctions_agent, temporal_agent — each writing to agent_outputs dict
-•	Step 5 — Decision Agent: collects all agent_outputs + rag_context, constructs grounded prompt, calls Bedrock Claude, parses JSON response into ComplianceOutput
-•	Step 6 — Output Formatting: DecisionEngine adds timestamp, request_id, validates all required fields, enforces status enum constraint
-•	Step 7 — Audit: hash-chain log written to S3 with rules_used, decision, confidence, and SHA-256 of input payload
 
 ## RAG Pipeline
 
