@@ -8,22 +8,35 @@ ComplianceLoop accepts an application request, routes it through LangGraph, coll
 
 ```mermaid
 flowchart LR
-    userReq["User Request"] --> decisionAgent["decision_agent"]
-    decisionAgent --> documentAgent["document_agent"]
-    decisionAgent --> ragAgent["rag_agent"]
-    decisionAgent --> sanctionsAgent["sanctions_agent"]
-    decisionAgent --> temporalAgent["temporal_agent"]
-    decisionAgent --> transactionAgent["transaction_agent"]
-    documentAgent --> corePipeline["ai/core/pipeline"]
-    ragAgent --> corePipeline
-    sanctionsAgent --> corePipeline
-    temporalAgent --> corePipeline
-    transactionAgent --> corePipeline
-    corePipeline --> auditStore["audit/store"]
-    auditStore --> apiResp["Response"]
-    apiResp --> feedbackStore["feedback/store"]
+    %% Main horizontal sequence
+    UserReq["User Request"] --> documentAgent["document_agent"]
+    documentAgent --> ragAgent["rag_agent"]
+    ragAgent --> transactionAgent["transaction_agent"]
+    transactionAgent --> semanticAgent["semantic_agent"]
+    semanticAgent --> temporalAgent["temporal_agent"]
+    temporalAgent --> decisionAgent["decision_agent"]
+    decisionAgent --> corePipeline["ai/core/pipeline"]
+    corePipeline --> Response
+    Response --> feedbackStore["feedback/store"]
     feedbackStore --> calibrationEngine["calibration/engine"]
-    calibrationEngine --> decisionAgent
+
+    %% Calibration feedback loops
+    corePipeline -.->|calibration| calibrationEngine
+    calibrationEngine -.->|feedback| corePipeline
+    calibrationEngine -.->|calibrate context| decisionAgent
+
+    %% Defining styles for visual clarity
+    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:1px;
+    classDef user fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px;
+    classDef core fill:#f3e5f5,stroke:#4a148c,stroke-width:1px;
+    classDef calibrate fill:#fff3e0,stroke:#e65100,stroke-width:1px;
+
+    %% Applying styles to nodes
+    class documentAgent,ragAgent,transactionAgent,semanticAgent,temporalAgent agent;
+    class UserReq user;
+    class decisionAgent agent;
+    class corePipeline,Response core;
+    class feedbackStore,calibrationEngine calibrate;
 ```
 
 ## Project Structure
