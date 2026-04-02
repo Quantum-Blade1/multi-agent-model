@@ -23,7 +23,7 @@ html, body, [class*="css"] {
 }
 
 .gradient-text-alt {
-    background: linear-gradient(135deg, #D4AF37 0%, #F3D270 100%);
+    background: linear-gradient(135deg, #39FF14 0%, #F3D270 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     font-weight: 800;
@@ -70,8 +70,8 @@ html, body, [class*="css"] {
     background: transparent !important;
 }
 [data-testid="stTabs"] button[aria-selected="true"] {
-    border-bottom: 2px solid #D4AF37 !important;
-    color: #D4AF37 !important;
+    border-bottom: 2px solid #39FF14 !important;
+    color: #39FF14 !important;
     font-weight: 700 !important;
 }
 
@@ -117,7 +117,7 @@ div.stMarkdown tr:hover {
 
 /* Buttons */
 .stButton > button {
-    background: linear-gradient(135deg, #D4AF37 0%, #A28220 100%) !important;
+    background: linear-gradient(135deg, #39FF14 0%, #A28220 100%) !important;
     color: #000000 !important;
     font-weight: 600 !important;
     border: none !important;
@@ -139,8 +139,8 @@ div.stMarkdown tr:hover {
     transition: all 0.3s ease !important;
 }
 .stTextInput input:focus, .stTextArea textarea:focus {
-    border-color: #D4AF37 !important;
-    box-shadow: 0 0 0 1px #D4AF37 !important;
+    border-color: #39FF14 !important;
+    box-shadow: 0 0 0 1px #39FF14 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -207,7 +207,7 @@ with t1:
     if "error" not in rules:
         html_table = "<table><tr><th>Rule ID</th><th>Threshold Name</th><th>Governance Status</th><th>Activation Weight</th></tr>"
         for r in rules:
-            html_table += f"<tr><td><code style='color:#D4AF37; background:transparent;'>{r['id']}</code></td><td>{r['name']}</td><td>{render_badge(r['status'])}</td><td>{r['weight']}</td></tr>"
+            html_table += f"<tr><td><code style='color:#39FF14; background:transparent;'>{r['id']}</code></td><td>{r['name']}</td><td>{render_badge(r['status'])}</td><td>{r['weight']}</td></tr>"
         html_table += "</table>"
         st.markdown(html_table, unsafe_allow_html=True)
 
