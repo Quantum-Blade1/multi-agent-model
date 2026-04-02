@@ -8,35 +8,21 @@ ComplianceLoop accepts an application request, routes it through LangGraph, coll
 
 ```mermaid
 flowchart LR
-    %% Main horizontal sequence
     UserReq["User Request"] --> documentAgent["document_agent"]
     documentAgent --> ragAgent["rag_agent"]
     ragAgent --> transactionAgent["transaction_agent"]
     transactionAgent --> semanticAgent["semantic_agent"]
     semanticAgent --> temporalAgent["temporal_agent"]
     temporalAgent --> decisionAgent["decision_agent"]
+    
     decisionAgent --> corePipeline["ai/core/pipeline"]
-    corePipeline --> Response
+    corePipeline --> Response["Response"]
     Response --> feedbackStore["feedback/store"]
     feedbackStore --> calibrationEngine["calibration/engine"]
 
-    %% Calibration feedback loops
-    corePipeline -.->|calibration| calibrationEngine
-    calibrationEngine -.->|feedback| corePipeline
-    calibrationEngine -.->|calibrate context| decisionAgent
-
-    %% Defining styles for visual clarity
-    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:1px;
-    classDef user fill:#e8f5e9,stroke:#1b5e20,stroke-width:1px;
-    classDef core fill:#f3e5f5,stroke:#4a148c,stroke-width:1px;
-    classDef calibrate fill:#fff3e0,stroke:#e65100,stroke-width:1px;
-
-    %% Applying styles to nodes
-    class documentAgent,ragAgent,transactionAgent,semanticAgent,temporalAgent agent;
-    class UserReq user;
-    class decisionAgent agent;
-    class corePipeline,Response core;
-    class feedbackStore,calibrationEngine calibrate;
+    %% Feedback loops
+    calibrationEngine -.->|calibration loop| decisionAgent
+    calibrationEngine -.->|data sync| corePipeline
 ```
 
 ## Project Structure
