@@ -12,7 +12,7 @@ flowchart LR
     documentAgent --> ragAgent["rag_agent"]
     ragAgent --> transactionAgent["transaction_agent"]
     transactionAgent --> semanticAgent["semantic_agent"]
-    semanticAgent --> temporalAgent["temporal_agent"]
+    sanctionAgent --> temporalAgent["temporal_agent"]
     temporalAgent --> decisionAgent["decision_agent"]
     
     decisionAgent --> corePipeline["ai/core/pipeline"]
