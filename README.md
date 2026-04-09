@@ -337,15 +337,3 @@ Keep module boundaries intact during changes: runtime decisioning in `ai/`, audi
 
 No license file is included in this repository. Treat the code as proprietary until a license is added.
 
-<h2 align="center">Team & Contributors</h2>
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center"><a href="https://github.com/rohan-chand-m-01"><img src="https://avatars.githubusercontent.com/u/10000001?v=4" width="100px;" alt=""/><br /><sub><b>Rohan Chand</b></sub></a><br /><i>Lead Architect</i></td>
-      <td align="center"><a href="#"><img src="https://avatars.githubusercontent.com/u/10000002?v=4" width="100px;" alt=""/><br /><sub><b>Aisha Patel</b></sub></a><br /><i>AI Engineer</i></td>
-      <td align="center"><a href="#"><img src="https://avatars.githubusercontent.com/u/10000003?v=4" width="100px;" alt=""/><br /><sub><b>Vikram Singh</b></sub></a><br /><i>Backend Dev</i></td>
-      <td align="center"><a href="#"><img src="https://avatars.githubusercontent.com/u/10000004?v=4" width="100px;" alt=""/><br /><sub><b>Neha Sharma</b></sub></a><br /><i>Data Scientist</i></td>
-    </tr>
-  </table>
-</div>
