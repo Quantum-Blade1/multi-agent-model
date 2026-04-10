@@ -8,22 +8,21 @@ ComplianceLoop accepts an application request, routes it through LangGraph, coll
 
 ```mermaid
 flowchart LR
-    userReq["User Request"] --> decisionAgent["decision_agent"]
-    decisionAgent --> documentAgent["document_agent"]
-    decisionAgent --> ragAgent["rag_agent"]
-    decisionAgent --> sanctionsAgent["sanctions_agent"]
-    decisionAgent --> temporalAgent["temporal_agent"]
-    decisionAgent --> transactionAgent["transaction_agent"]
-    documentAgent --> corePipeline["ai/core/pipeline"]
-    ragAgent --> corePipeline
-    sanctionsAgent --> corePipeline
-    temporalAgent --> corePipeline
-    transactionAgent --> corePipeline
-    corePipeline --> auditStore["audit/store"]
-    auditStore --> apiResp["Response"]
-    apiResp --> feedbackStore["feedback/store"]
+    UserReq["User Request"] --> documentAgent["document_agent"]
+    documentAgent --> ragAgent["rag_agent"]
+    ragAgent --> transactionAgent["transaction_agent"]
+    transactionAgent --> sanctionAgent["semantic_agent"]
+    sanctionAgent --> temporalAgent["temporal_agent"]
+    temporalAgent --> decisionAgent["decision_agent"]
+    
+    decisionAgent --> corePipeline["ai/core/pipeline"]
+    corePipeline --> Response["Response"]
+    Response --> feedbackStore["feedback/store"]
     feedbackStore --> calibrationEngine["calibration/engine"]
-    calibrationEngine --> decisionAgent
+
+    %% Feedback loops
+    calibrationEngine -.->|calibration loop| decisionAgent
+    calibrationEngine -.->|data sync| corePipeline
 ```
 
 ## Project Structure
@@ -102,6 +101,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 | `temporal_agent` | Check expiry and time validity | Document metadata and expiry dates | Expired document signals | `decision_agent` graph fan-out |
 | `transaction_agent` | Apply FOIR and repayment checks | Income, EMI, tenure, amount | FOIR pass/fail signals | `decision_agent` graph fan-out |
 
+
 ## RAG Pipeline
 
 The ingestion path scrapes RBI circulars, normalizes them into chunkable text, embeds the chunks, and builds FAISS indexes consumed by `rag_agent`. `index_management` handles safe swaps when a newer index is available.
@@ -119,7 +119,10 @@ flowchart LR
 
 ## Compliance And Audit Architecture
 
-The audit path records every decision before response completion. SHA-256 is used for deterministic content hashing. RSA-2048-PSS is used for asymmetric signatures because PSS is the current safe padding mode for long-lived signatures. AES-256 is used for record encryption at rest because the access pattern is symmetric and service-bound.
+The audit path records every decision before response completion. 
+SHA-256 is used for deterministic content hashing 
+RSA-2048-PSS is used for asymmetric signatures because PSS is the current safe padding mode for long-lived signatures. 
+AES-256 is used for record encryption at rest because the access pattern is symmetric and service-bound.
 
 ```mermaid
 flowchart LR
