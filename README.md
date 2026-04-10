@@ -1,22 +1,61 @@
-# ComplianceLoop
+<div align="center">
+  <h1>ComplianceLoop</h1>
+  <p><b>Multi-agent NBFC compliance decisioning for RBI and DPDP 2026 controls.</b></p>
+  <p>
+    <img src="https://img.shields.io/badge/Python-3.11+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI">
+    <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Docker">
+    <img src="https://img.shields.io/badge/AWS_Bedrock-232F3E?style=for-the-badge&logo=amazon-aws&logoColor=white" alt="AWS Bedrock">
+    <img src="https://img.shields.io/badge/LangGraph-FF4F00?style=for-the-badge&logo=langchain&logoColor=white" alt="LangGraph">
+    <img src="https://img.shields.io/badge/FAISS-1c2541?style=for-the-badge&logo=meta&logoColor=white" alt="FAISS">
+  </p>
+</div>
 
-Multi-agent NBFC compliance decisioning for RBI and DPDP 2026 controls.
+<br>
 
-## Architecture Overview
+<h2 align="center">System Mind Map</h2>
+
+```mermaid
+mindmap
+  root((ComplianceLoop))
+    AI Agents
+      Decision Agent
+      Document Agent
+      RAG Agent
+      Sanctions Agent
+      Temporal Agent
+      Transaction Agent
+    Architecture
+      LangGraph Orchestration
+      Bedrock Claude LLM
+      FastAPI Layer
+    Data & Retrieval
+      FAISS Vector Index
+      BGE Embeddings
+      Delta Lake Audit
+    Feedback Loop
+      Reviewer Inputs
+      Calibration Engine
+      Rules Adjustment
+```
+
+
+<h2 align="center">Architecture Overview</h2>
 
 ComplianceLoop accepts an application request, routes it through LangGraph, collects evidence from five specialist agents, and returns a final decision through the core pipeline. The pipeline persists an audit record before the API responds. Reviewer feedback flows back into calibration and rule thresholds.
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#f4f4f4', 'edgeLabelBackground':'#ffffff', 'tertiaryColor': '#ececec'}}}%%
 flowchart LR
-    UserReq["User Request"] --> documentAgent["document_agent"]
-    documentAgent --> ragAgent["rag_agent"]
-    ragAgent --> transactionAgent["transaction_agent"]
-    transactionAgent --> sanctionAgent["semantic_agent"]
-    sanctionAgent --> temporalAgent["temporal_agent"]
-    temporalAgent --> decisionAgent["decision_agent"]
+    UserReq(["User Request"]) --> documentAgent{"document_agent"}
+    documentAgent --> ragAgent{"rag_agent"}
+    ragAgent --> transactionAgent{"transaction_agent"}
+    transactionAgent --> sanctionAgent{"semantic_agent"}
+    sanctionAgent --> temporalAgent{"temporal_agent"}
+    temporalAgent --> decisionAgent{"decision_agent"}
     
     decisionAgent --> corePipeline["ai/core/pipeline"]
-    corePipeline --> Response["Response"]
+    corePipeline --> Response(["Response"])
     Response --> feedbackStore["feedback/store"]
     feedbackStore --> calibrationEngine["calibration/engine"]
 
@@ -25,7 +64,7 @@ flowchart LR
     calibrationEngine -.->|data sync| corePipeline
 ```
 
-## Project Structure
+<h2 align="center">Project Structure</h2>
 
 ```text
 multi-agent-model/
@@ -51,7 +90,7 @@ multi-agent-model/
     └── ingestion/
 ```
 
-## Tech Stack
+<h2 align="center">Tech Stack</h2>
 
 | Layer | Technology | Purpose |
 |---|---|---|
@@ -67,7 +106,7 @@ multi-agent-model/
 | Packaging | Docker and docker-compose | Local and deployment runtime |
 | Testing | pytest | Unit, integration, ingestion verification |
 
-## Getting Started
+<h2 align="center">Getting Started</h2>
 
 Prerequisites: Python 3.11+, Docker, AWS credentials with Bedrock access, and FAISS build support for your platform.
 
@@ -90,7 +129,7 @@ python -m ingestion.run_pipeline
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-## Agent Responsibilities
+<h2 align="center">Agent Responsibilities</h2>
 
 | Agent | Responsibility | Input | Output | Triggered by |
 |---|---|---|---|---|
@@ -102,7 +141,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 | `transaction_agent` | Apply FOIR and repayment checks | Income, EMI, tenure, amount | FOIR pass/fail signals | `decision_agent` graph fan-out |
 
 
-## RAG Pipeline
+<h2 align="center">RAG Pipeline</h2>
 
 The ingestion path scrapes RBI circulars, normalizes them into chunkable text, embeds the chunks, and builds FAISS indexes consumed by `rag_agent`. `index_management` handles safe swaps when a newer index is available.
 
@@ -112,12 +151,12 @@ flowchart LR
     chunker --> embedder["ingestion/faiss/embedder"]
     embedder --> faissIndex["FAISS index"]
     faissIndex --> retriever["ai/rag/retriever"]
-    retriever --> ragAgent["rag_agent"]
+    retriever --> ragAgent{"rag_agent"}
     watcher["index_management/watcher"] --> swapper["index_management/swapper"]
     swapper --> faissIndex
 ```
 
-## Compliance And Audit Architecture
+<h2 align="center">Compliance And Audit Architecture</h2>
 
 The audit path records every decision before response completion. 
 SHA-256 is used for deterministic content hashing 
@@ -134,7 +173,7 @@ flowchart LR
     encryptStep --> immutableLog["Immutable log"]
 ```
 
-## Calibration Engine
+<h2 align="center">Calibration Engine</h2>
 
 Calibration consumes reviewer outcomes, computes error by confidence bucket, and updates live thresholds without code changes. `live_adjuster` applies the active penalty model to each decision.
 
@@ -147,7 +186,7 @@ flowchart LR
     rulesEngine --> feedbackStore
 ```
 
-## Observability
+<h2 align="center">Observability</h2>
 
 Structured logs carry request identifiers and scrubbed fields. Metrics are emitted per decision, agent error, and model call so the system can surface latency, failure rate, and confidence drift.
 
@@ -160,7 +199,7 @@ Structured logs carry request identifiers and scrubbed fields. Metrics are emitt
 | `BedrockLatency` | Histogram or timer | Bedrock call latency | `observability/metrics.py` |
 | `BedrockFailure` | Counter | Failed or fallback model calls | `observability/metrics.py` |
 
-## Test Suite
+<h2 align="center">Test Suite</h2>
 
 | Test file | Component under test | What is verified | Type |
 |---|---|---|---|
@@ -253,7 +292,7 @@ Cases:
 - `test_search`: asserts nearest-neighbor search returns scored hits.
 - `test_build_two_indexes`: asserts master and updated indexes are both generated.
 
-## Configuration Reference
+<h2 align="center">Configuration Reference</h2>
 
 | Var | Type | Default | Description |
 |---|---|---|---|
@@ -279,21 +318,22 @@ Cases:
 | `SANCTIONS_LIST_PATH` | string | `ingestion/data/sanctions.json` | Sanctions dataset path |
 | `EMBED_BATCH_SIZE` | integer | `32` | Embedding batch size |
 
-## Security Architecture
+<h2 align="center">Security Architecture</h2>
 
 The system signs immutable audit content with SHA-256 digests and RSA-2048-PSS signatures, encrypts protected records with AES-256, and gates administrative actions through RBAC. Immutability depends on append-only audit writes, signature verification, and key separation between write, review, and read paths.
 
-## Roadmap
+<h2 align="center">Roadmap</h2>
 
 - Replace mock sanctions screening with a regulated upstream source and deterministic fallback policy.
 - Split `tests/unit/test_rules.py` and `tests/unit/test_feedback.py` into active unit coverage.
 - Move cryptographic key management to KMS-backed envelope encryption and signature rotation.
 - Add calibration drift alerts tied to confidence bucket shift and reviewer disagreement rate.
 
-## Contributing
+<h2 align="center">Contributing</h2>
 
 Keep module boundaries intact during changes: runtime decisioning in `ai/`, audit and control planes in top-level domain packages, ingestion offline, and tests split by scope. Update diagrams, path references, and test documentation in the same change when modules move.
 
-## License
+<h2 align="center">License</h2>
 
 No license file is included in this repository. Treat the code as proprietary until a license is added.
+
